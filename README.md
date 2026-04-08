@@ -146,6 +146,25 @@ npm run start
 npm test
 ```
 
+## Frontend (React + TypeScript)
+
+The UI client is in `frontend/` and is wired to this backend SSE API.
+
+Run:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Frontend URL:
+- `http://localhost:5173`
+
+Connection behavior:
+- In development, Vite proxies `/api` and `/health` to `http://localhost:3000`.
+- Optional override: set `VITE_API_BASE` in `frontend/.env`.
+
 ## API Documentation
 
 Swagger UI is served at:
@@ -277,4 +296,3 @@ docker compose logs weaviate --tail 200
 - Add structured log shipping and metrics.
 - Pin and regularly patch Docker base images and npm dependencies.
 - Add CI gates for tests and type checks.
-
