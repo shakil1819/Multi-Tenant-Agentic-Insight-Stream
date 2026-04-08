@@ -1,67 +1,188 @@
-# Agentic RAG + Chart.js System
+# Agentic RAG ChartJS Backend
 
-LangGraph-orchestrated agent hierarchy with Weaviate vector DB (multi-tenancy), RAG retrieval, and mock Chart.js tool. Full LangSmith tracing.
+Production-oriented Node.js backend that orchestrates a LangGraph agent flow with:
+- Weaviate multi-tenant knowledge retrieval (RAG).
+- Mock Chart.js artifact generation.
+- Server-Sent Events (SSE) streaming response format.
+- Fastify + Swagger UI for API documentation.
+- Optional LangSmith tracing for graph/tool/LLM observability.
+
+## Overview
+
+The backend exposes one primary endpoint:
+- `POST /api/chat/stream`
+
+Input:
+- `tenantId`
+- `query`
+- optional `fileIds`
+
+Output is streamed SSE snapshots with shape:
+
+```json
+{
+  "answer": "string",
+  "data": []
+}
+```
+
+`data[]` may contain:
+- RAG reference objects (`rag_reference_group`).
+- Chart artifacts (`chartjs`).
 
 ## Architecture
 
+```text
+Client
+  -> POST /api/chat/stream (SSE)
+      -> LangGraph router node
+         -> direct node
+         -> rag node (Weaviate retrieval + LLM synthesis)
+         -> chart node (mock Chart.js tool)
+      -> finalize node (orders data, composes final answer)
+  -> streamed snapshots: { answer, data[] }
 ```
-POST /api/chat/stream { tenantId, query }
-  → Route Node (heuristics + LLM fallback)
-    ├── Direct Node → LLM answer, no tools
-    ├── RAG Node → Weaviate hybrid/fetchObjects → LLM-grounded answer + file refs
-    ├── Chart Node → Mock Chart.js config
-    └── [RAG, Chart] parallel or sequential
-  → Finalize Node → ordered {answer, data} via SSE
+
+Routing supports:
+- direct answering
+- rag only
+- chart only
+- rag + chart sequential
+- rag + chart parallel
+
+## Tech Stack
+
+- Runtime: Node.js 20+, TypeScript, ESM
+- API server: Fastify
+- API docs: `@fastify/swagger`, `@fastify/swagger-ui`
+- Agent orchestration: `@langchain/langgraph`
+- LLM abstraction/tooling: LangChain
+- Vector DB: Weaviate (`weaviate-client`)
+- Testing: Vitest
+
+## Repository Structure
+
+```text
+.
+├── docker-compose.yml
+├── Dockerfile
+├── scripts/
+│   ├── wait-for-weaviate.ts
+│   ├── create-schema.ts
+│   └── seed.ts
+├── src/
+│   ├── server.ts
+│   ├── app.ts
+│   ├── config/
+│   ├── api/
+│   ├── graph/
+│   ├── agents/
+│   ├── tools/
+│   ├── infra/
+│   ├── streaming/
+│   └── types/
+└── tests/
 ```
 
 ## Prerequisites
 
 - Node.js 20+
-- Docker & Docker Compose
-- OpenAI API key (set in `.env`)
-- LangSmith API key (optional, for tracing dashboard)
+- Docker Desktop / Docker Engine with Compose v2
+- OpenAI API key (current implementation uses OpenAI through LangChain)
+- Optional LangSmith API key for tracing
 
-## Quick Start (Single Command)
+## Environment Configuration
+
+1. Copy environment template:
+
+```bash
+cp .env.example .env
+```
+
+2. Set required values in `.env`:
+- `OPENAI_API_KEY`
+- `OPENAI_MODEL`
+- `WEAVIATE_URL` (local default is fine for non-docker host mode)
+- `LANGSMITH_API_KEY` (optional)
+
+Notes:
+- In Docker Compose, app `WEAVIATE_URL` is overridden to `http://weaviate:8080`.
+- Do not commit real secrets.
+
+## Quick Start (Recommended)
+
+Single command startup:
 
 ```bash
 docker compose up
 ```
 
-This single command:
+What this does:
 - starts Weaviate
 - waits for readiness
-- creates schema (if missing)
-- seeds tenant data (if missing)
-- starts the Fastify backend
+- creates collection schema if missing
+- seeds tenant data if missing
+- starts Fastify server
 
-Endpoints:
-- API docs: `http://localhost:3000/docs`
+Useful URLs:
+- Swagger UI: `http://localhost:3000/docs`
 - OpenAPI JSON: `http://localhost:3000/docs/json`
 - Health: `http://localhost:3000/health`
 
-## Quick Start (Manual Local Dev)
+## Local Development (Without App Container)
 
 ```bash
-# 1. Install dependencies
 npm install
-
-# 2. Configure environment
-cp .env.example .env
-# Edit .env with your real OPENAI_API_KEY and LANGSMITH_API_KEY
-
-# 3. Start Weaviate
 docker compose up -d weaviate
-
-# 4. Wait for Weaviate + create schema + seed data
 npm run setup
-
-# 5. Start dev server
 npm run dev
 ```
 
-## Usage
+## Build, Run, Test
 
-### SSE Stream (primary endpoint)
+```bash
+npm run build
+npm run start
+npm test
+```
+
+## API Documentation
+
+Swagger UI is served at:
+- `GET /docs`
+
+OpenAPI JSON:
+- `GET /docs/json`
+
+Implementation detail:
+- OpenAPI does not hardcode `servers` to keep Swagger "Try it out" same-origin safe across environments.
+
+## Primary API Contract
+
+### `POST /api/chat/stream`
+
+Request:
+
+```json
+{
+  "tenantId": "tenant-acme",
+  "query": "What is the remote work policy?",
+  "fileIds": ["optional-file-id"]
+}
+```
+
+Response:
+- `Content-Type: text/event-stream`
+- frames shaped as:
+
+```text
+data: {"answer":"...","data":[...]}
+
+event: done
+data: {}
+```
+
+Example cURL:
 
 ```bash
 curl -N -X POST http://localhost:3000/api/chat/stream \
@@ -69,117 +190,91 @@ curl -N -X POST http://localhost:3000/api/chat/stream \
   -d '{"tenantId":"tenant-acme","query":"What is the remote work policy?"}'
 ```
 
-### Example queries
+## Weaviate Schema and Multi-Tenancy
 
-| Query | Route |
-|-------|-------|
-| `What is the remote work policy?` | RAG |
-| `Generate a bar chart of quarterly sales` | Chart |
-| `What is the travel reimbursement threshold and chart it` | Sequential (RAG → Chart) |
-| `Show me a chart and also lookup the benefits guide` | Parallel (RAG + Chart) |
-| `What is 2 + 2?` | Direct |
+Collection is created by `scripts/create-schema.ts` with:
+- `fileId` (TEXT, filterable, not searchable)
+- `question` (TEXT, searchable)
+- `answer` (TEXT, searchable)
+- `pageNumber` (TEXT_ARRAY)
 
-### Health check
+Multi-tenancy is enabled.
+Seeding is done by `scripts/seed.ts` with fictional entries under tenant `tenant-acme`.
 
-```bash
-curl http://localhost:3000/health
-```
+## RAG and Fallback Behavior
 
-### API docs (Swagger UI)
+RAG path behavior:
+1. Try hybrid search.
+2. If unavailable (for example no vectorizer), fallback to `fetchObjects`.
+3. Normalize hits and group references by `fileId`.
+4. Emit reference labels in format `N- Page X`.
 
-```bash
-# Interactive docs UI
-http://localhost:3000/docs
+## Observability (LangSmith)
 
-# OpenAPI JSON document
-http://localhost:3000/docs/json
-```
+When enabled:
+- Graph runs, node spans, tool spans, and model calls are traced.
 
-## Docker Full Deployment
+Required env:
+- `LANGSMITH_TRACING=true`
+- `LANGSMITH_API_KEY`
+- `LANGSMITH_PROJECT`
 
-```bash
-docker compose up --build
-```
+Dashboard:
+- `https://smith.langchain.com`
 
-This starts both Weaviate and the app. The app container waits for Weaviate readiness, creates the schema, seeds data, then starts the server.
-
-## LangSmith Tracing
-
-When `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY` is set:
-
-- Every graph execution appears as a LangGraph trace
-- Each node (route, rag, chart, direct, finalize) is a child span
-- All ChatOpenAI calls are traced as LLM runs
-- Chart tool invocations are traced as tool runs
-- RAG service operations are traced as chain runs
-
-View traces at: https://smith.langchain.com
-
-## Response Format
-
-Each SSE event:
-```json
-{
-  "answer": "Cumulative answer text so far...",
-  "data": [
-    {
-      "kind": "rag_reference_group",
-      "fileIndex": 1,
-      "fileId": "employee-handbook",
-      "pages": ["3"],
-      "labels": ["1- Page 3"],
-      "chunksUsed": [...]
-    },
-    {
-      "kind": "chartjs",
-      "chartId": "chart-...",
-      "summary": "...",
-      "config": { "type": "bar", ... }
-    }
-  ]
-}
-```
-
-RAG reference groups always come before chart artifacts in `data[]`.
-
-## Tests
+## Operational Commands
 
 ```bash
-npm test
+docker compose up -d
+docker compose logs -f app
+docker compose ps
+docker compose down
+docker compose down -v
 ```
 
-## File Structure
+## Troubleshooting
 
+### Swagger "Failed to fetch" / CORS-style error
+
+- Ensure you are opening and calling from the same host/origin where docs are served.
+- Hard refresh the docs page after deployments (`Ctrl+F5`).
+- Confirm backend is reachable at `/health`.
+
+### `401 Incorrect API key provided`
+
+- Your `OPENAI_API_KEY` is invalid, expired, or not loaded by the running process.
+- After editing `.env` in docker mode, recreate app container:
+
+```bash
+docker compose up -d --force-recreate app
 ```
-├── docker-compose.yml       # Weaviate + app containers
-├── Dockerfile               # Multi-stage Node.js build
-├── scripts/
-│   ├── wait-for-weaviate.ts # Readiness poller
-│   ├── create-schema.ts     # Collection + multi-tenancy setup
-│   └── seed.ts              # 3 fictional QA entries
-├── src/
-│   ├── server.ts            # Entry point, LangSmith init
-│   ├── app.ts               # Fastify + Swagger setup
-│   ├── config/env.ts        # Zod-validated env config
-│   ├── api/
-│   │   ├── dto/chat.dto.ts  # Request validation
-│   │   └── routes/
-│   │       ├── health.route.ts
-│   │       └── chat.stream.route.ts  # SSE handler
-│   ├── types/               # Shared TypeScript types
-│   ├── prompts/             # All LLM prompts centralized
-│   ├── infra/
-│   │   ├── openai/          # ChatOpenAI singleton
-│   │   └── weaviate/        # Client, schema, repository
-│   ├── tools/chart/         # Mock Chart.js LangChain tool
-│   ├── agents/rag/          # RAG service, normalize, references
-│   ├── graph/
-│   │   ├── state.ts         # LangGraph typed state
-│   │   ├── routes.ts        # Conditional edge logic
-│   │   ├── app.graph.ts     # Compiled StateGraph
-│   │   └── nodes/           # route, direct, rag, chart, finalize
-│   ├── streaming/           # SSE + stream normalizer
-│   └── utils/logger.ts
-└── tests/
-    └── unit/                # Reference grouping, routing, normalizer
+
+### Weaviate not ready
+
+- Check container status and logs:
+
+```bash
+docker compose ps
+docker compose logs weaviate --tail 200
 ```
+
+### No streaming in API client
+
+- Use an SSE-capable client (`curl -N`, browser EventSource, or frontend SSE handling).
+
+## Security Practices
+
+- Never commit real API keys.
+- Rotate keys immediately if exposed.
+- Keep `.env` local/private.
+- Prefer least-privilege API tokens where supported.
+- Validate and sanitize all external inputs at API boundaries (already enforced with DTO schema validation).
+
+## Production Hardening Checklist
+
+- Replace mock/demo keys with managed secrets provider.
+- Add request rate limiting and authN/authZ.
+- Add structured log shipping and metrics.
+- Pin and regularly patch Docker base images and npm dependencies.
+- Add CI gates for tests and type checks.
+
