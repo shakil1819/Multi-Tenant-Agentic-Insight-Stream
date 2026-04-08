@@ -2,7 +2,6 @@ import cors from "@fastify/cors";
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import Fastify, { type FastifyInstance } from "fastify";
-import { env } from "./config/env.js";
 import { healthHandler } from "./api/routes/health.route.js";
 import { streamChatHandler } from "./api/routes/chat.stream.route.js";
 
@@ -73,7 +72,6 @@ export async function createApp(): Promise<FastifyInstance> {
         version: "1.0.0",
         description: "Fastify backend for agentic RAG + Chart orchestration with SSE streaming.",
       },
-      servers: [{ url: `http://localhost:${env.PORT}` }],
       tags: [
         { name: "System", description: "System level endpoints" },
         { name: "Chat", description: "Agentic chat endpoints" },
