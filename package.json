@@ -1,0 +1,37 @@
+{
+  "name": "agentic-rag-chartjs",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "tsx src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/src/server.js",
+    "create-schema": "tsx scripts/create-schema.ts",
+    "seed": "tsx scripts/seed.ts",
+    "setup": "tsx scripts/wait-for-weaviate.ts && npm run create-schema && npm run seed",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.2.0",
+    "@fastify/swagger": "^9.7.0",
+    "@fastify/swagger-ui": "^5.2.5",
+    "@langchain/core": "^0.3.0",
+    "@langchain/langgraph": "^0.2.0",
+    "@langchain/openai": "^0.5.0",
+    "dotenv": "^17.4.1",
+    "fastify": "^5.8.4",
+    "langchain": "^0.3.0",
+    "langsmith": "^0.3.0",
+    "weaviate-client": "^3.6.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}
