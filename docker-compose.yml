@@ -31,27 +31,64 @@ services:
       start_period: 10s
     restart: unless-stopped
 
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: unless-stopped
+  backend:
+    image: node:20-alpine
+    working_dir: /workspace
     init: true
+    restart: unless-stopped
     ports:
       - "3000:3000"
     env_file:
       - .env
     environment:
       WEAVIATE_URL: "http://weaviate:8080"
+      CHOKIDAR_USEPOLLING: "true"
+    volumes:
+      - ./:/workspace
+      - backend_node_modules:/workspace/node_modules
+    command: >
+      sh -c "npm install &&
+             npm run setup &&
+             npm run dev"
+    depends_on:
+      weaviate:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 6
       start_period: 30s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    working_dir: /app
+    init: true
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_PROXY_TARGET: "http://backend:3000"
+      CHOKIDAR_USEPOLLING: "true"
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    command: >
+      sh -c "npm install &&
+             npm run dev -- --host 0.0.0.0 --port 5173"
     depends_on:
-      weaviate:
+      backend:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:5173 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
 
 volumes:
   weaviate_data:
+  backend_node_modules:
+  frontend_node_modules:
