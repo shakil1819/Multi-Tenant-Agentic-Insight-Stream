@@ -21,7 +21,25 @@ POST /api/chat/stream { tenantId, query }
 - OpenAI API key (set in `.env`)
 - LangSmith API key (optional, for tracing dashboard)
 
-## Quick Start
+## Quick Start (Single Command)
+
+```bash
+docker compose up
+```
+
+This single command:
+- starts Weaviate
+- waits for readiness
+- creates schema (if missing)
+- seeds tenant data (if missing)
+- starts the Fastify backend
+
+Endpoints:
+- API docs: `http://localhost:3000/docs`
+- OpenAPI JSON: `http://localhost:3000/docs/json`
+- Health: `http://localhost:3000/health`
+
+## Quick Start (Manual Local Dev)
 
 ```bash
 # 1. Install dependencies
