@@ -179,9 +179,3 @@ docker compose ps
 docker compose logs weaviate --tail 200
 ```
 
-## Security Notes
-
-- Never commit real API keys.
-- Rotate keys if exposed.
-- Keep `.env` private.
-
