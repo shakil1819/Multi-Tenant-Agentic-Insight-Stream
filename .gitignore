@@ -4,3 +4,4 @@ dist/
 *.log
 CLAUDE.md
 .runtime/
+.docs/
