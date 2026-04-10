@@ -8,26 +8,60 @@ Production outcome: convert enterprise document questions into trustworthy, sour
 - This system provides tenant-isolated retrieval, explicit references (`fileId` + pages), optional chart config generation, and incremental streaming for responsive UX.
 ![alt text](docs/image-1.png)
 ## System Design
-
 ```mermaid
-flowchart LR
-    UI[Frontend React] -->|POST /api/chat/stream| API[Fastify API]
-    API --> GR[Request Guardrails]
-    GR --> MEM[Memory Loader]
-    MEM --> CE[Context Engineering]
-    CE --> LG[LangGraph Orchestrator]
-    LG --> ROUTER[Delegating Router Node]
-    ROUTER --> DIRECT[Direct LLM Node]
-    ROUTER --> RAG[RAG Node]
-    ROUTER --> CHART[Chart Tool Node]
-    RAG --> WEAV["`Weaviate withTenant(tenantId)`"]
-    DIRECT --> LLM[LangChain Chat Model]
+flowchart TD
+    %% Group Frontend and API
+    subgraph Client & API
+        UI[Frontend React]
+        API[Fastify API]
+    end
+    
+    subgraph Guardrails & Context
+        GR[Request Guardrails]
+        MEM[Memory Loader]
+        CE[Context Engineering]
+    end
+    
+    subgraph Orchestration
+        LG[LangGraph Orchestrator]
+        ROUTER[Delegating Router Node]
+        DIRECT[Direct LLM Node]
+        RAG[RAG Node]
+        CHART[Chart Tool Node]
+    end
+
+    subgraph Backend Services
+        WEAV["`Weaviate withTenant(tenantId)`"]
+        LLM[LangChain Chat Model]
+        TOOL[Mock Chart.js Tool]
+        FIN[Finalize Node]
+        SSE[SSE Stream Normalizer]
+    end
+
+    %% Main flows
+    UI -->|POST /api/chat/stream| API
+    API --> GR
+    GR --> MEM
+    MEM --> CE
+    CE --> LG
+    LG --> ROUTER
+    
+
+    ROUTER --> DIRECT
+    ROUTER --> RAG
+    ROUTER --> CHART
+
+    DIRECT --> LLM
+    DIRECT --> FIN
+
+    RAG --> WEAV
     RAG --> LLM
-    CHART --> TOOL[Mock Chart.js Tool]
-    DIRECT --> FIN[Finalize Node]
     RAG --> FIN
+
+    CHART --> TOOL
     CHART --> FIN
-    FIN --> SSE[SSE Stream Normalizer]
+
+    FIN --> SSE
     SSE --> UI
 ```
 
