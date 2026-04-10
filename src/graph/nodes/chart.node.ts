@@ -8,7 +8,7 @@ import type { ResponseDataObject } from "../../types/response.types.js";
  * Chart node: calls the mock Chart.js tool and pushes the artifact into data.
  * LangGraph auto-traces this node. The tool invocation is a child tool span.
  */
-export async function chartNode(state: AppStateType): Promise<Partial<AppStateType>> {
+export async function chartNode(_state: AppStateType): Promise<Partial<AppStateType>> {
   try {
     const toolResult = await chartJsTool.invoke({
       title: "Requested Chart",

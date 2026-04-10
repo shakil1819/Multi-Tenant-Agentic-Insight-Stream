@@ -59,7 +59,7 @@ jobs:
           path: reports/security/gitleaks.sarif
 
   quality-and-tests:
-    name: Code Checks + Pre-commit + Unit Tests
+    name: Code Checks + Node Pre-commit + Unit Tests
     runs-on: ubuntu-latest
     env:
       ROOT_NPM_CACHE_DIR: /home/runner/.cache/agentic-rag-chartjs/npm-root
@@ -75,11 +75,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-
-      - name: Setup Python (for pre-commit)
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
 
       - name: Restore backend dependency cache
         id: cache-backend
@@ -133,14 +128,8 @@ jobs:
           rm -rf frontend/node_modules
           cp -R "$FRONTEND_NODE_MODULES" frontend/node_modules
 
-      - name: Install pre-commit
-        run: |
-          set -euo pipefail
-          python -m pip install --upgrade pip
-          pip install pre-commit
-
-      - name: Run pre-commit checks
-        run: pre-commit run --all-files --show-diff-on-failure
+      - name: Run node pre-commit checks
+        run: npm run precommit
 
       - name: Backend code check (TypeScript build)
         run: npm run build
