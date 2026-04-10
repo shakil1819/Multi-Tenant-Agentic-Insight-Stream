@@ -1,106 +1,105 @@
-# Agentic RAG + ChartJS (Full Stack)
+# InsightPilot: Multi-Tenant Agentic Intelligence API (RAG + Chart Streaming)
 
-Production-oriented agentic system with:
-- Node.js Fastify backend
-- Weaviate multi-tenant vector database
-- LangGraph routing/orchestration
-- LangChain-based LLM + tool integration
-- React + TypeScript frontend
-- SSE streaming response contract
+Production outcome: convert enterprise document questions into trustworthy, source-cited answers and optional chart artifacts through one streaming API.
 
-## Services
+## Specific Problem This Solves
+- Teams need fast answers from internal docs, but raw LLM responses are not tenant-safe and often lack source provenance.
+- Product teams also need structured outputs (for UI rendering), not only plain text.
+- This system provides tenant-isolated retrieval, explicit references (`fileId` + pages), optional chart config generation, and incremental streaming for responsive UX.
+![alt text](docs/image-1.png)
+## System Design
 
-`docker compose up` starts all services together:
-- `weaviate` on `:8080`
-- `backend` on `:3000` (Fastify + Swagger)
-- `frontend` on `:5173` (Vite dev server)
-
-## Hot Reload Behavior
-
-- Backend uses `tsx watch src/server.ts`.
-- Frontend uses Vite HMR.
-- Source directories are bind-mounted into containers.
-- Code changes are reflected without rebuilding images.
-
-## Agentic Runtime Controls (This Phase)
-
-### Guardrails
-- Request guardrails block unsafe input patterns before graph execution.
-- Validation covers tenant/file identifier safety, oversized payloads, and prompt-injection/exfiltration patterns.
-
-### Memory
-- Tenant-scoped persistent memory is stored under `.runtime/memory/`.
-- Recent successful turns are appended and reused as conversational memory context.
-
-### Context Engineering
-- Query + memory are token-budgeted before model calls.
-- Recent memory is injected under a bounded budget to avoid context bloat.
-
-## Architecture
-
-```text
-Frontend (React)
-  -> POST /api/chat/stream
-      -> Backend (Fastify)
-          -> LangGraph router
-             -> Direct node (LLM)
-             -> RAG node (Weaviate + LLM)
-             -> Chart node (mock Chart.js tool)
-          -> Finalize node
-  <- SSE snapshots: { answer, data[] }
+```mermaid
+flowchart LR
+    UI[Frontend React] -->|POST /api/chat/stream| API[Fastify API]
+    API --> GR[Request Guardrails]
+    GR --> MEM[Memory Loader]
+    MEM --> CE[Context Engineering]
+    CE --> LG[LangGraph Orchestrator]
+    LG --> ROUTER[Delegating Router Node]
+    ROUTER --> DIRECT[Direct LLM Node]
+    ROUTER --> RAG[RAG Node]
+    ROUTER --> CHART[Chart Tool Node]
+    RAG --> WEAV["`Weaviate withTenant(tenantId)`"]
+    DIRECT --> LLM[LangChain Chat Model]
+    RAG --> LLM
+    CHART --> TOOL[Mock Chart.js Tool]
+    DIRECT --> FIN[Finalize Node]
+    RAG --> FIN
+    CHART --> FIN
+    FIN --> SSE[SSE Stream Normalizer]
+    SSE --> UI
 ```
 
-## Prerequisites
+## Core Features
+- Node.js end-to-end backend (`Fastify`, `LangGraph`, `LangChain`, `weaviate-client`).
+- Multi-tenant Weaviate collection with explicit tenant scoping (`withTenant(tenantId)`).
+- Delegating agent supports:
+1. direct answer
+2. RAG-only
+3. chart-only
+4. mixed RAG + chart (parallel or sequential)
+- Streaming API contract: `data: { answer, data[] }` snapshots over SSE.
+- Swagger UI docs (`/docs`) and OpenAPI JSON (`/docs/json`).
+- Guardrails for identifier validation, payload limits, and prompt-injection/exfiltration filtering.
+- Tenant memory persistence (`.runtime/memory`) for short-term continuity.
+- Context engineering with token budgeting to bound prompt size.
+- Docker Compose one-command startup with hot reload for backend and frontend.
 
-- Docker Desktop / Docker Engine + Compose v2
-- `.env` configured at repository root
+## Multi-Tenancy at Data Level
+- Collection: `TenantQaChunk` (created by `scripts/create-schema.ts`).
+- Multi-tenancy: enabled (`autoTenantCreation: false`, `autoTenantActivation: true`).
+- Properties:
+1. `fileId` (`text`, `indexSearchable: false`, `indexFilterable: true`)
+2. `question` (`text`, searchable)
+3. `answer` (`text`, searchable)
+4. `pageNumber` (`text[]`, not searchable)
+- Seed data: at least 3 fictional records inserted via `scripts/seed.ts` under tenant `tenant-acme`.
+- Runtime isolation: all retrieval operations call `client.collections.use(...).withTenant(tenantId)`.
+
+## Agent Runtime Controls
+### Guardrails
+- File: `src/guardrails/request.guardrails.ts`
+- Blocks malformed tenant/file IDs, too-large query payloads, and high-risk injection/exfiltration prompts.
+
+### Memory
+- File: `src/memory/chat-memory.store.ts`
+- Persists bounded per-tenant Q/A history in `.runtime/memory/<tenant>.json`.
+
+### Context Engineering
+- File: `src/context/context-engineering.ts`
+- Estimates token usage, trims query to budget, and injects bounded recent memory context.
+
+## Quick Start
+Prerequisites:
+- Docker Engine/Desktop + Docker Compose v2
+- `.env` at repository root (copy from `.env.example`)
 - valid `OPENAI_API_KEY`
 
-## Environment
-
-Create root `.env` from `.env.example` and set:
-- `OPENAI_API_KEY`
-- `OPENAI_MODEL`
-- `LANGSMITH_*` (optional but recommended)
-
-Compose overrides:
-- backend `WEAVIATE_URL=http://weaviate:8080`
-- frontend `VITE_PROXY_TARGET=http://backend:3000`
-
-## One-Command Startup
-
+Run everything:
 ```bash
 docker compose up
 ```
 
-What happens:
-1. Weaviate starts and becomes healthy.
-2. Backend installs deps, runs schema+seed (`npm run setup`), then starts in watch mode.
-3. Frontend starts in Vite dev mode with proxy to backend.
-
-## Endpoints
-
-- Frontend UI: `http://localhost:5173`
-- Backend health: `http://localhost:3000/health`
+Services:
+- Weaviate: `http://localhost:8080`
+- Backend API: `http://localhost:3000`
 - Swagger UI: `http://localhost:3000/docs`
-- OpenAPI JSON: `http://localhost:3000/docs/json`
+- Frontend: `http://localhost:5173`
 
 ## API Contract
-
-### `POST /api/chat/stream`
+Endpoint: `POST /api/chat/stream`
 
 Request:
-
 ```json
 {
   "tenantId": "tenant-acme",
-  "query": "What is the remote work policy?",
-  "fileIds": ["optional-file-id"]
+  "query": "Show remote work policy and visualize it",
+  "fileIds": ["employee-handbook"]
 }
 ```
 
-Response (SSE):
-
+SSE response shape:
 ```text
 data: {"answer":"...","data":[...]}
 
@@ -108,39 +107,55 @@ event: done
 data: {}
 ```
 
-`data[]` may include:
+`data[]` includes one or both:
 - `rag_reference_group`
 - `chartjs`
 
-## Weaviate Setup
+## How to Check LangSmith Traces
+### 1) Configure env
+In `.env`, set:
+- `LANGSMITH_TRACING=true`
+- `LANGSMITH_API_KEY=<your_key>`
+- `LANGSMITH_PROJECT=agentic-rag-chartjs` (or your own project name)
+- `LANGSMITH_ENDPOINT=https://api.smith.langchain.com`
+![alt text](docs/image.png)
+### 2) Start stack and send traffic
+```bash
+docker compose up
+curl -N -X POST "http://localhost:3000/api/chat/stream" ^
+  -H "Content-Type: application/json" ^
+  -H "Accept: text/event-stream" ^
+  -d "{\"tenantId\":\"tenant-acme\",\"query\":\"What is remote work policy?\"}"
+```
 
-Schema is managed by:
-- `scripts/create-schema.ts`
-- `scripts/seed.ts`
+### 3) Verify in LangSmith UI
+- Go to `https://smith.langchain.com`
+- Open the project from `LANGSMITH_PROJECT`
+- Expected trace tree:
+1. root graph run
+2. router node run
+3. rag/direct/chart node runs (based on route)
+4. LLM runs (`ChatOpenAI`) and tool runs (`generate_chartjs_config`)
+5. finalize node run
 
-Multi-tenant collection includes:
-- `fileId` (TEXT, filterable, not searchable)
-- `question` (TEXT, searchable)
-- `answer` (TEXT, searchable)
-- `pageNumber` (TEXT_ARRAY)
+### 4) Verify backend startup log
+- Backend log prints whether LangSmith is enabled and project name on startup.
 
-RAG behavior:
-1. Hybrid query attempt
-2. Fallback to `fetchObjects` if embedding/vectorizer route is unavailable
-3. Reference grouping labels like `N- Page X`
+## How to Verify Weaviate Schema and Seed
+```bash
+curl http://localhost:8080/v1/schema
+curl http://localhost:8080/v1/schema/TenantQaChunk/tenants
+```
 
-## Observability
-
-LangSmith tracing is supported through:
-- `LANGSMITH_TRACING`
-- `LANGSMITH_API_KEY`
-- `LANGSMITH_PROJECT`
-- `LANGSMITH_ENDPOINT`
+Example data query:
+```bash
+curl -X POST "http://localhost:8080/v1/graphql" ^
+  -H "Content-Type: application/json" ^
+  -d "{\"query\":\"{ Get { TenantQaChunk(tenant: \\\"tenant-acme\\\") { fileId question answer pageNumber } } }\"}"
+```
 
 ## Development Commands
-
 ```bash
-docker compose up -d
 docker compose ps
 docker compose logs -f backend
 docker compose logs -f frontend
@@ -149,46 +164,39 @@ docker compose down
 docker compose down -v
 ```
 
-Recreate backend after `.env` change:
-
-```bash
-docker compose up -d --force-recreate backend
-```
-
-## Local (Non-Docker) Optional
-
-Backend:
-
+Backend local:
 ```bash
 npm install
 npm run setup
 npm run dev
 ```
 
-Frontend:
-
+Frontend local:
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-## Troubleshooting
-
-### Swagger "Failed to fetch"
-
-- hard refresh docs (`Ctrl+F5`)
-- check backend health endpoint
-- ensure browser is calling same host where docs are served
-
-### 401 from OpenAI
-
-- invalid/expired key in `.env`
-- recreate backend container after changing `.env`
-
-### Weaviate unavailable
-
+## Test
 ```bash
-docker compose ps
+npm test
+```
+
+## Troubleshooting
+### Swagger "Failed to fetch" on SSE
+- Use same-origin docs URL (`http://localhost:3000/docs`).
+- Prefer frontend client or cURL for SSE validation.
+- Hard refresh browser cache (`Ctrl+F5`) after backend changes.
+
+### OpenAI 401
+- Check `OPENAI_API_KEY` in `.env`.
+- Recreate backend container after env change:
+```bash
+docker compose up -d --force-recreate backend
+```
+
+### Weaviate not healthy
+```bash
 docker compose logs weaviate --tail 200
 ```
