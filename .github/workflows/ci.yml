@@ -1,0 +1,171 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+  security-events: write
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secret-scan:
+    name: Secret Leak Check (Gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install gitleaks
+        run: |
+          set -euo pipefail
+          GITLEAKS_VERSION=8.24.2
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz
+          sudo mv gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: Run gitleaks scan
+        run: |
+          set -euo pipefail
+          mkdir -p reports/security
+          gitleaks detect \
+            --source . \
+            --no-git \
+            --redact \
+            --report-format sarif \
+            --report-path reports/security/gitleaks.sarif
+
+      - name: Upload SARIF to GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: reports/security/gitleaks.sarif
+
+      - name: Upload security report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-report
+          path: reports/security/gitleaks.sarif
+
+  quality-and-tests:
+    name: Code Checks + Pre-commit + Unit Tests
+    runs-on: ubuntu-latest
+    env:
+      ROOT_NPM_CACHE_DIR: /home/runner/.cache/agentic-rag-chartjs/npm-root
+      FRONTEND_NPM_CACHE_DIR: /home/runner/.cache/agentic-rag-chartjs/npm-frontend
+      BACKEND_NODE_MODULES: /home/runner/.cache/agentic-rag-chartjs/node_modules-root
+      FRONTEND_NODE_MODULES: /home/runner/.cache/agentic-rag-chartjs/node_modules-frontend
+      CI: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Python (for pre-commit)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Restore backend dependency cache
+        id: cache-backend
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.ROOT_NPM_CACHE_DIR }}
+            ${{ env.BACKEND_NODE_MODULES }}
+          key: backend-${{ runner.os }}-node20-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            backend-${{ runner.os }}-node20-
+
+      - name: Restore frontend dependency cache
+        id: cache-frontend
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.FRONTEND_NPM_CACHE_DIR }}
+            ${{ env.FRONTEND_NODE_MODULES }}
+          key: frontend-${{ runner.os }}-node20-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: |
+            frontend-${{ runner.os }}-node20-
+
+      - name: Install backend dependencies (cache miss only)
+        if: steps.cache-backend.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          npm ci --cache "$ROOT_NPM_CACHE_DIR" --prefer-offline --no-audit
+          rm -rf "$BACKEND_NODE_MODULES"
+          cp -R node_modules "$BACKEND_NODE_MODULES"
+
+      - name: Restore backend node_modules from cache
+        if: steps.cache-backend.outputs.cache-hit == 'true'
+        run: |
+          set -euo pipefail
+          rm -rf node_modules
+          cp -R "$BACKEND_NODE_MODULES" node_modules
+
+      - name: Install frontend dependencies (cache miss only)
+        if: steps.cache-frontend.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          npm ci --prefix frontend --cache "$FRONTEND_NPM_CACHE_DIR" --prefer-offline --no-audit
+          rm -rf "$FRONTEND_NODE_MODULES"
+          cp -R frontend/node_modules "$FRONTEND_NODE_MODULES"
+
+      - name: Restore frontend node_modules from cache
+        if: steps.cache-frontend.outputs.cache-hit == 'true'
+        run: |
+          set -euo pipefail
+          rm -rf frontend/node_modules
+          cp -R "$FRONTEND_NODE_MODULES" frontend/node_modules
+
+      - name: Install pre-commit
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install pre-commit
+
+      - name: Run pre-commit checks
+        run: pre-commit run --all-files --show-diff-on-failure
+
+      - name: Backend code check (TypeScript build)
+        run: npm run build
+
+      - name: Frontend code check (TypeScript + Vite build)
+        run: npm run build --prefix frontend
+
+      - name: Run unit tests with JUnit output
+        run: |
+          set -euo pipefail
+          mkdir -p reports/unit
+          npx vitest run --reporter=default --reporter=junit --outputFile=reports/unit/vitest-junit.xml
+
+      - name: Publish unit test report
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: Unit Tests (Vitest)
+          path: reports/unit/vitest-junit.xml
+          reporter: java-junit
+          fail-on-error: true
+
+      - name: Upload unit test report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vitest-junit-report
+          path: reports/unit/vitest-junit.xml
