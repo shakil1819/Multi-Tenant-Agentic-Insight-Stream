@@ -7,9 +7,13 @@ import type { AppStateType } from "../state.js";
  * LangGraph auto-traces this node. The chatModel.invoke() is a child LLM span.
  */
 export async function directNode(state: AppStateType): Promise<Partial<AppStateType>> {
+  const userPrompt = state.memoryContext
+    ? `${state.memoryContext}\n\nCurrent user question:\n${state.query}`
+    : state.query;
+
   const response = await chatModel.invoke([
     { role: "system", content: DIRECT_ANSWER_SYSTEM_PROMPT },
-    { role: "user", content: state.query },
+    { role: "user", content: userPrompt },
   ]);
 
   const answer =

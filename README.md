@@ -22,6 +22,20 @@ Production-oriented agentic system with:
 - Source directories are bind-mounted into containers.
 - Code changes are reflected without rebuilding images.
 
+## Agentic Runtime Controls (This Phase)
+
+### Guardrails
+- Request guardrails block unsafe input patterns before graph execution.
+- Validation covers tenant/file identifier safety, oversized payloads, and prompt-injection/exfiltration patterns.
+
+### Memory
+- Tenant-scoped persistent memory is stored under `.runtime/memory/`.
+- Recent successful turns are appended and reused as conversational memory context.
+
+### Context Engineering
+- Query + memory are token-budgeted before model calls.
+- Recent memory is injected under a bounded budget to avoid context bloat.
+
 ## Architecture
 
 ```text
@@ -178,4 +192,3 @@ npm run dev
 docker compose ps
 docker compose logs weaviate --tail 200
 ```
-

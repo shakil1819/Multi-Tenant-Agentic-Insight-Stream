@@ -15,6 +15,7 @@ export async function ragNode(state: AppStateType): Promise<Partial<AppStateType
     const result = await ragService.answer({
       tenantId: state.tenantId,
       query: state.query,
+      memoryContext: state.memoryContext,
     });
 
     logger.info("RAG completed", {

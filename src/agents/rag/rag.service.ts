@@ -20,6 +20,7 @@ export class RagService {
       tenantId: string;
       query: string;
       fileIds?: string[];
+      memoryContext?: string;
     }): Promise<RagResult> => {
       const tenantCollection = await getTenantCollection(params.tenantId);
 
@@ -78,7 +79,7 @@ export class RagService {
 
       // ── Build context and ask LLM ──
       const context = buildRagContext(hits, references);
-      const prompt = buildRagAnswerPrompt(params.query, context);
+      const prompt = buildRagAnswerPrompt(params.query, context, params.memoryContext);
 
       const llmResponse = await this.model.invoke(prompt);
       const answerText =

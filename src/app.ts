@@ -49,10 +49,7 @@ const chatStreamRouteSchema = {
     },
     400: {
       type: "object",
-      properties: {
-        error: { type: "object" },
-      },
-      required: ["error"],
+      additionalProperties: true,
     },
   },
 } as const;

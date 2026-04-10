@@ -20,6 +20,10 @@ export const AppState = Annotation.Root({
     reducer: (_, right) => right,
     default: () => "",
   }),
+  memoryContext: Annotation<string>({
+    reducer: (_, right) => right,
+    default: () => "",
+  }),
 
   // ── Routing ──
   route: Annotation<RouteDecision | null>({

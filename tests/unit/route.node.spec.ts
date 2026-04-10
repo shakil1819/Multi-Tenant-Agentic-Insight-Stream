@@ -6,6 +6,7 @@ function makeState(overrides: Partial<AppStateType>): AppStateType {
   return {
     tenantId: "t1",
     query: "test",
+    memoryContext: "",
     route: null,
     ragResult: null,
     chartResult: null,
