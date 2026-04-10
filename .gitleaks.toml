@@ -1,0 +1,10 @@
+title = "agentic-rag-chartjs gitleaks config"
+
+[allowlist]
+description = "Ignore local environment files and generated reports."
+paths = [
+  '''(^|/)\.env$''',
+  '''(^|/)\.env\..*$''',
+  '''(^|/)reports/.*$''',
+  '''(^|/)gitleaks-.*\.json$'''
+]

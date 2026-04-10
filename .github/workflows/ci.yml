@@ -17,6 +17,9 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   secret-scan:
     name: Secret Leak Check (Gitleaks)
@@ -39,6 +42,7 @@ jobs:
           set -euo pipefail
           mkdir -p reports/security
           gitleaks detect \
+            --config .gitleaks.toml \
             --source . \
             --no-git \
             --redact \
@@ -47,7 +51,7 @@ jobs:
 
       - name: Upload SARIF to GitHub Security
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: reports/security/gitleaks.sarif
 
